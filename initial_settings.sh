@@ -20,7 +20,7 @@ validate_and_get_value(){
 ask_if_install_dep(){
     local question="$1"
     while true; do
-        read -p "$question (y/n): "
+        read -p "$question (y/n): " yn
         case $yn in
             [Yy]* ) return 0;;
             [Nn]* ) return 1;;
@@ -33,14 +33,16 @@ PKG_MANAGER=""
 INSTALL_CMD=""
 
 is_package_installed(){
-    local PKG_NAME="$1"
+    local pkg_name="$1"
     if [ "$PKG_MANAGER" = "pacman" ]; then
-        pacman -Q "$PKG_NAME" &> /dev/null
+        pacman -Q "$pkg_name" &> /dev/null
     elif [ "$PKG_MANAGER" = "apt" ]; then
-        dpkg-query -W -f="${Status}" 2>/dev/null | grep -q "install ok installed"
+        dpkg-query -W -f='${Status}' "$pkg_name" 2>/dev/null | grep -q "install ok installed"
     fi
 }
-
+is_ohMyZsh_installed() {
+    [[ -d "${HOME}/.oh-my-zsh" ]]
+}
 detect_package_manager() {
     echo "Detecting package manager..."
     if command -v pacman &> /dev/null; then
@@ -58,22 +60,24 @@ detect_package_manager() {
 }
 
 install_packages(){
-    local PACKAGE_TO_INSTALL=()
+    local package_to_install=()
     for pkg in "$@"; do
         if is_package_installed "$pkg"; then
             echo "Package '$pkg' is already installed."
         else
-            PACKAGE_TO_INSTALL+=("$pkg")
+            package_to_install+=("$pkg")
         fi
     done
 
-    if [[ ${#PACKAGE_TO_INSTALL[@]} -gt 0]]; then
-        $INSTALL_CMD ${PACKAGE_TO_INSTALL[@]}
+    if [[ ${#package_to_install[@]} -gt 0]]; then
+        $INSTALL_CMD ${package_to_install[@]}
     fi
 }
 #init variables
 USER_NAME=""
 USER_EMAIL=""
+
+ZSH_INSTALLED=false
 
 
 # Parse command-line arguments
@@ -104,12 +108,16 @@ git config --global user.email "$USER_EMAIL"
 git config --global init.defaultBranch main
 
 #install the basic packages need it
-$INSTALL_CMD wget curl
+install_packages wget curl
+
 if ask_if_install_dep "Do you want to install Zsh and Oh My Zsh?"; then
-    echo "Installing Zsh with Oh My ZSh..."
-    $INSTALL_CMD zsh
-    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
-    chsh -s "$(command -v zsh)" "$USER"
+    if ! is_ohMyZsh_installed; then
+        echo "Installing Zsh with Oh My ZSh..."
+        install_packages zsh
+        sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
+        chsh -s "$(command -v zsh)" "$USER"
+    fi
+    ZSH_INSTALLED=true
 else
     echo "Skipping Zsh and Oh My Zsh installation"
 fi
