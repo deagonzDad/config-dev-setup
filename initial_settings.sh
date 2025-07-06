@@ -32,17 +32,23 @@ ask_if_install_dep(){
 PKG_MANAGER=""
 INSTALL_CMD=""
 
+is_framework_installed(){
+    command -v "$1" &> /dev/null
+}
+
 is_package_installed(){
     local pkg_name="$1"
-    if [ "$PKG_MANAGER" = "pacman" ]; then
+    if [[ "$PKG_MANAGER" == "pacman" ]]; then
         pacman -Q "$pkg_name" &> /dev/null
-    elif [ "$PKG_MANAGER" = "apt" ]; then
+    elif [[ "$PKG_MANAGER" == "apt" ]]; then
         dpkg-query -W -f='${Status}' "$pkg_name" 2>/dev/null | grep -q "install ok installed"
     fi
 }
+
 is_ohMyZsh_installed() {
     [[ -d "${HOME}/.oh-my-zsh" ]]
 }
+
 detect_package_manager() {
     echo "Detecting package manager..."
     if command -v pacman &> /dev/null; then
@@ -69,7 +75,7 @@ install_packages(){
         fi
     done
 
-    if [[ ${#package_to_install[@]} -gt 0]]; then
+    if [[ ${#package_to_install[@]} -gt 0 ]]; then
         $INSTALL_CMD ${package_to_install[@]}
     fi
 }
@@ -77,6 +83,8 @@ install_packages(){
 USER_NAME=""
 USER_EMAIL=""
 
+
+ZSH_PATH=""
 ZSH_INSTALLED=false
 
 
@@ -102,24 +110,74 @@ done
 
 detect_package_manager
 
+
+echo "This script requires sudo access for package installation."
+sudo -v
+
 echo "Configuring Git globally"
 git config --global user.name "$USER_NAME"
 git config --global user.email "$USER_EMAIL"
 git config --global init.defaultBranch main
 
 #install the basic packages need it
-install_packages wget curl
+install_packages wget curl unzip
 
 if ask_if_install_dep "Do you want to install Zsh and Oh My Zsh?"; then
+    install_packages zsh
     if ! is_ohMyZsh_installed; then
         echo "Installing Zsh with Oh My ZSh..."
-        install_packages zsh
         sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
-        chsh -s "$(command -v zsh)" "$USER"
     fi
+    ZSH_PATH=$(command -v zsh)
+    if ! grep -q "^${ZSH_PATH}$" /etc/shells; then
+        echo "$ZSH_PATH" | sudo tee -a /etc/shells > /dev/null
+    fi
+    sudo chsh -s "$ZSH_PATH" "$USER"
     ZSH_INSTALLED=true
 else
     echo "Skipping Zsh and Oh My Zsh installation"
 fi
+if ask_if_install_dep "Do you want to install uv (a fast Python package manager)?"; then
+    if ! is_framework_installed uv; then
+        curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
+    fi
+    if [[ -d "${HOME}/.local/bin/env" ]]; then
+        echo '. "$HOME/.local/bin/env"' >> "${HOME}/.zshrc"
+    fi
+else
+    echo "Skipping uv (python manager based Rust) installation"
+fi
 
+if ask_if_install_dep "Do you want to install fnm (a fast Node.js version manager)?"; then
+    if ! is_framework_installed fnm; then
+        curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
+        if [[ "$ZSH_INSTALLED" == "true" ]] && ! grep -q 'fnm env --use-on-cd' "${HOME}/.zshrc"; then
+            FNM_INSTALL_DIR=$HOME/.local/share/fnm
+            {
+            echo ''
+            echo '# fnm'
+            echo 'FNM_PATH="'"$FNM_INSTALL_DIR"'"'
+            echo 'if [ -d "$FNM_PATH" ]; then'
+            echo '  export PATH="'$FNM_INSTALL_DIR':$PATH"'
+            echo '  eval "`fnm env`"'
+            echo 'fi'
+            } >> "${HOME}/.zshrc"
+            # echo 'eval "$(fnm env --use-on-cd --shell=zsh)"' >> "${HOME}/.zshrc"
+        fi
+    fi
+else
+    echo "Skipping fnm (Node Manager based in Rust) installation"
+fi
+# C# Installation
+# install_packages tar gzip openssl zlib icu
+
+#docker 
+if ask_if_install_dep "Do you want to install Docker and Docker-compose?"; then
+    install_packages docker docker-compose
+    if ! groups "$USER" | grep -q '\bdocker\b'; then
+        sudo usermod -aG docker "$USER"
+    fi
+fi
+
+echo "INFO: You must log out and log back in for Docker group changes to take effect."
 echo "All specified setup tasks completed successfully!"
