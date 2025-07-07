@@ -141,8 +141,10 @@ if ask_if_install_dep "Do you want to install uv (a fast Python package manager)
     if ! is_framework_installed uv; then
         curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh
     fi
-    if [[ -d "${HOME}/.local/bin/env" ]]; then
-        echo '. "$HOME/.local/bin/env"' >> "${HOME}/.zshrc"
+    UV_INSTALLER_ENV_COMMAND="${HOME}/.local/bin/env"
+    UV_APPEND_COMMAND=". \"${UV_INSTALLER_ENV_COMMAND}\""
+    if [[ "$ZSH_INSTALLED" == "true" ]] && [[ -f "$UV_INSTALLER_ENV_COMMAND" ]] && ! grep -q "${UV_APPEND_COMMAND}" "${HOME}/.zshrc"; then
+        echo  $UV_APPEND_COMMAND>> "${HOME}/.zshrc"
     fi
 else
     echo "Skipping uv (python manager based Rust) installation"
@@ -151,7 +153,8 @@ fi
 if ask_if_install_dep "Do you want to install fnm (a fast Node.js version manager)?"; then
     if ! is_framework_installed fnm; then
         curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
-        if [[ "$ZSH_INSTALLED" == "true" ]] && ! grep -q 'fnm env --use-on-cd' "${HOME}/.zshrc"; then
+        FNM_INSTALLER_ENV_COMMAND='eval "`fnm env`"'
+        if [[ "$ZSH_INSTALLED" == "true" ]] && ! grep -q "${FNM_INSTALLER_ENV_COMMAND}" "${HOME}/.zshrc"; then
             FNM_INSTALL_DIR=$HOME/.local/share/fnm
             {
             echo ''
@@ -159,7 +162,7 @@ if ask_if_install_dep "Do you want to install fnm (a fast Node.js version manage
             echo 'FNM_PATH="'"$FNM_INSTALL_DIR"'"'
             echo 'if [ -d "$FNM_PATH" ]; then'
             echo '  export PATH="'$FNM_INSTALL_DIR':$PATH"'
-            echo '  eval "`fnm env`"'
+            echo "${FNM_INSTALLER_ENV_COMMAND}"
             echo 'fi'
             } >> "${HOME}/.zshrc"
             # echo 'eval "$(fnm env --use-on-cd --shell=zsh)"' >> "${HOME}/.zshrc"
