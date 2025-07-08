@@ -12,6 +12,7 @@ This script automates the setup of a consistent and powerful development environ
   - Installs **fnm** (Fast Node Manager) for managing multiple Node.js versions.
   - Installs **uv** (a fast Python package manager and resolver) from Astral.
 - **Containerization**: Installs Docker and Docker Compose and adds your user to the `docker` group to enable running Docker commands without `sudo`.
+- **Developer Tools**: Includes a separate script (`general/IA_settings.sh`) to install development tools like the Gemini CLI.
 - **Shell Integration**: Automatically configures `.zshrc` to ensure all installed tools are available in your `PATH` and initialized correctly.
 
 ## Prerequisites
@@ -69,6 +70,18 @@ After the script finishes, you **must log out and log back in** for two critical
 2.  Your default shell to change to Zsh.
 
 A full reboot will also achieve this.
+
+## Additional Scripts
+
+### `general/IA_settings.sh`
+
+This script is designed to be run after the main `initial_settings.sh` script. It focuses on setting up AI-related tools, specifically the Google Gemini CLI. It automates the installation of its dependencies, including Node.js (via `fnm`) and the `pnpm` package manager, before installing the `@google/gemini-cli` package itself.
+
+To run it:
+
+```bash
+./general/IA_settings.sh
+```
 
 ## Customization
 
