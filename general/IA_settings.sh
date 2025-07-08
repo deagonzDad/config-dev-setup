@@ -4,7 +4,6 @@ set -euo pipefail
 SOURCE_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}")" &> /dev/null && pwd )"
 . "${SOURCE_DIR}/../common/helpers.sh"
 
-ZSH_INSTALLED=false
 
 detect_package_manager
 
