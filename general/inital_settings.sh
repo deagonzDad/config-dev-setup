@@ -1,124 +1,34 @@
 #!/bin/bash
-
 # -e: exit immediately if a command exits with a non-zero status.
 # -u: Treat unset variables as an error when substituting.
 # -o pipefail: The return value of a pipeline is the status of the last command.
 set -euo pipefail
 
-# --- Logging Functions ---
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Source helpers
+# Determine the script's directory in a way that works for both Bash and Zsh
+if [ -n "${BASH_VERSION:-}" ]; then
+    SCRIPT_PATH="${BASH_SOURCE[0]:-}"
+elif [ -n "${ZSH_VERSION:-}" ]; then
+    # In Zsh, (%):-%x gives the active script path
+    SCRIPT_PATH="${(%):-%x}"
+else
+    SCRIPT_PATH="$0"
+fi
 
-log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
-log_success() { echo -e "${GREEN}[SUCCESS]${NC} $1"; }
-log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; }
-log_error() { echo -e "${RED}[ERROR]${NC} $1" >&2; }
+SCRIPT_DIR="$( cd "$( dirname "$SCRIPT_PATH" )" && pwd )"
+HELPERS_PATH="${SCRIPT_DIR}/../common/helpers.sh"
 
-# --- Utility Functions ---
-validate_and_get_value() {
-    local OPTION_NAME="$1"
-    local VALUE_TO_CHECK="$2"
-    if [[ -z "$VALUE_TO_CHECK" || "$VALUE_TO_CHECK" == -* ]]; then
-        log_error "'$OPTION_NAME' requires a value."
-        echo "Usage: $0 --name <name> --email <email>" >&2
-        exit 1
-    fi
-    echo "$VALUE_TO_CHECK"
-}
-
-ask_yes_no() {
-    local question="$1"
-    local yn=""
-    while true; do
-        printf "%b%s (y/n): %b" "${YELLOW}" "$question" "${NC}"
-        # Use read without -p for portability between bash and zsh
-        read yn
-        case $yn in
-            [Yy]* ) return 0;;
-            [Nn]* ) return 1;;
-            * ) echo "Please enter yes or no.";;
-        esac
-    done
-}
-
-# --- Package Management ---
-PKG_MANAGER=""
-INSTALL_CMD=()
-
-is_framework_installed(){
-    command -v "$1" &> /dev/null
-}
-
-is_package_installed() {
-    local pkg_name="$1"
-    case "$PKG_MANAGER" in
-        pacman) pacman -Q "$pkg_name" &> /dev/null ;;
-        apt) dpkg-query -W -f='${Status}' "$pkg_name" 2>/dev/null | grep -q "install ok installed" ;;
-        dnf) rpm -q "$pkg_name" &> /dev/null ;;
-    esac
-}
-
-is_ohMyZsh_installed() {
-    [[ -d "${HOME}/.oh-my-zsh" ]]
-}
-
-detect_package_manager() {
-    log_info "Detecting package manager..."
-    if command -v pacman &> /dev/null; then
-        PKG_MANAGER="pacman"
-        INSTALL_CMD=(sudo pacman -Sy --noconfirm)
-        log_success "Detected Arch Linux (pacman)"
-    elif command -v apt &> /dev/null; then
-        PKG_MANAGER="apt"
-        INSTALL_CMD=(sudo apt install -y)
-        log_success "Detected Debian/Ubuntu (apt)"
-    elif command -v dnf &> /dev/null; then
-        PKG_MANAGER="dnf"
-        INSTALL_CMD=(sudo dnf install -y)
-        log_success "Detected Fedora/RHEL (dnf)"
+if [[ -f "$HELPERS_PATH" ]]; then
+    . "$HELPERS_PATH"
+else
+    # Fallback to current dir if the above fails (e.g. if script is sourced or moved)
+    if [[ -f "${PWD}/common/helpers.sh" ]]; then
+        . "${PWD}/common/helpers.sh"
     else
-        log_error "Supported package manager (pacman, apt, dnf) not found."
+        echo "Error: helpers.sh not found at $HELPERS_PATH" >&2
         exit 1
     fi
-}
-
-
-install_packages() {
-    local packages_to_install=()
-    for pkg in "$@"; do
-        if is_package_installed "$pkg"; then
-            log_info "Package '$pkg' is already installed."
-        else
-            packages_to_install+=("$pkg")
-        fi
-    done
-
-    if [[ ${#packages_to_install[@]} -gt 0 ]]; then
-        log_info "Installing: ${packages_to_install[*]}"
-        "${INSTALL_CMD[@]}" "${packages_to_install[@]}"
-    fi
-}
-
-update_shell_config() {
-    local config_file="$1"
-    local marker_start="# --- ANTIGRAVITY CONFIG START ---"
-    local marker_end="# --- ANTIGRAVITY CONFIG END ---"
-    local new_content="$2"
-
-    if [[ ! -f "$config_file" ]]; then
-        touch "$config_file"
-    fi
-
-    # Remove old block if exists and append new one
-    if grep -q "$marker_start" "$config_file"; then
-        sed -i "/$marker_start/,/$marker_end/d" "$config_file"
-    fi
-
-    echo -e "\n$marker_start\n$new_content\n$marker_end" >> "$config_file"
-}
+fi
 
 # --- Main Logic ---
 
@@ -193,21 +103,31 @@ if ask_yes_no "Do you want to install/update uv (Fast Python manager)?"; then
     log_success "uv installation/update complete."
 fi
 
-# --- fnm (Node Manager) ---
-if ask_yes_no "Do you want to install/update fnm (Fast Node manager)?"; then
-    log_info "Installing/updating fnm..."
-    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
-    
-    FNM_CONFIG='export PATH="$HOME/.local/share/fnm:$PATH"
-eval "$(fnm env --use-on-cd)"'
-    
-    if [[ -f "$HOME/.zshrc" ]]; then
-        update_shell_config "$HOME/.zshrc" "$FNM_CONFIG"
-    fi
-    log_success "fnm installation/update complete."
+# --- Node/pnpm Management ---
+if ask_yes_no "Do you want to install/update fnm, Node.js (LTS), and pnpm?"; then
+    setup_fnm_node_pnpm
 fi
 
 # --- Optional Tools ---
+if ask_yes_no "Do you want to install Gemini CLI?"; then
+    log_info "Installing gemini-cli..."
+    if command_exists pnpm; then
+        if pnpm install -g @google/gemini-cli; then
+            log_success "Successfully installed gemini-cli"
+        else
+            log_error "Failed to install gemini-cli"
+        fi
+    # elif command_exists npm; then
+    #      if npm install -g @google/gemini-cli; then
+    #         log_success "Successfully installed gemini-cli"
+    #     else
+    #         log_error "Failed to install gemini-cli"
+    #     fi
+    else
+        log_error "Neither pnpm nor npm found. Cannot install Gemini CLI."
+    fi
+fi
+
 if ask_yes_no "Do you want to install Neovim?"; then
     install_packages neovim
 fi
