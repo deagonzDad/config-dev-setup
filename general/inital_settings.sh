@@ -31,8 +31,11 @@ validate_and_get_value() {
 
 ask_yes_no() {
     local question="$1"
+    local yn=""
     while true; do
-        read -p "$question (y/n): " yn
+        printf "%b%s (y/n): %b" "${YELLOW}" "$question" "${NC}"
+        # Use read without -p for portability between bash and zsh
+        read yn
         case $yn in
             [Yy]* ) return 0;;
             [Nn]* ) return 1;;
@@ -43,43 +46,10 @@ ask_yes_no() {
 
 # --- Package Management ---
 PKG_MANAGER=""
-INSTALL_CMD=""
+INSTALL_CMD=()
 
 is_framework_installed(){
     command -v "$1" &> /dev/null
-}
-
-is_package_installed(){
-    local pkg_name="$1"
-    if [[ "$PKG_MANAGER" == "pacman" ]]; then
-        pacman -Q "$pkg_name" &> /dev/null
-    elif [[ "$PKG_MANAGER" == "apt" ]]; then
-        dpkg-query -W -f='${Status}' "$pkg_name" 2>/dev/null | grep -q "install ok installed"
-    fi
-}
-
-is_ohMyZsh_installed() {
-    [[ -d "${HOME}/.oh-my-zsh" ]]
-}
-
-detect_package_manager() {
-    log_info "Detecting package manager..."
-    if command -v pacman &> /dev/null; then
-        PKG_MANAGER="pacman"
-        INSTALL_CMD="sudo pacman -S --noconfirm"
-        log_success "Detected Arch Linux (pacman)"
-    elif command -v apt &> /dev/null; then
-        PKG_MANAGER="apt"
-        INSTALL_CMD="sudo apt install -y"
-        log_success "Detected Debian/Ubuntu (apt)"
-    elif command -v dnf &> /dev/null; then
-        PKG_MANAGER="dnf"
-        INSTALL_CMD="sudo dnf install -y"
-        log_success "Detected Fedora/RHEL (dnf)"
-    else
-        log_error "Supported package manager (pacman, apt, dnf) not found."
-        exit 1
-    fi
 }
 
 is_package_installed() {
@@ -90,6 +60,31 @@ is_package_installed() {
         dnf) rpm -q "$pkg_name" &> /dev/null ;;
     esac
 }
+
+is_ohMyZsh_installed() {
+    [[ -d "${HOME}/.oh-my-zsh" ]]
+}
+
+detect_package_manager() {
+    log_info "Detecting package manager..."
+    if command -v pacman &> /dev/null; then
+        PKG_MANAGER="pacman"
+        INSTALL_CMD=(sudo pacman -Sy --noconfirm)
+        log_success "Detected Arch Linux (pacman)"
+    elif command -v apt &> /dev/null; then
+        PKG_MANAGER="apt"
+        INSTALL_CMD=(sudo apt install -y)
+        log_success "Detected Debian/Ubuntu (apt)"
+    elif command -v dnf &> /dev/null; then
+        PKG_MANAGER="dnf"
+        INSTALL_CMD=(sudo dnf install -y)
+        log_success "Detected Fedora/RHEL (dnf)"
+    else
+        log_error "Supported package manager (pacman, apt, dnf) not found."
+        exit 1
+    fi
+}
+
 
 install_packages() {
     local packages_to_install=()
@@ -103,7 +98,7 @@ install_packages() {
 
     if [[ ${#packages_to_install[@]} -gt 0 ]]; then
         log_info "Installing: ${packages_to_install[*]}"
-        $INSTALL_CMD "${packages_to_install[@]}"
+        "${INSTALL_CMD[@]}" "${packages_to_install[@]}"
     fi
 }
 
@@ -148,14 +143,16 @@ sudo -v
 if [[ -z "$USER_NAME" ]]; then
     USER_NAME=$(git config --global user.name || echo "")
     if [[ -z "$USER_NAME" ]]; then
-        read -p "Enter your Git name: " USER_NAME
+        printf "Enter your Git name: "
+        read USER_NAME
     fi
 fi
 
 if [[ -z "$USER_EMAIL" ]]; then
     USER_EMAIL=$(git config --global user.email || echo "")
     if [[ -z "$USER_EMAIL" ]]; then
-        read -p "Enter your Git email: " USER_EMAIL
+        printf "Enter your Git email: "
+        read USER_EMAIL
     fi
 fi
 
@@ -190,23 +187,16 @@ if ask_yes_no "Do you want to install Zsh and Oh My Zsh?"; then
 fi
 
 # --- uv (Python Manager) ---
-if ask_yes_no "Do you want to install uv (Fast Python manager)?"; then
-    if ! command -v uv &> /dev/null; then
-        curl -LsSf https://astral.sh/uv/install.sh | sh
-        # curl -LsSf https://astral.sh/uv/install.sh | env INSTALLER_NO_MODIFY_PATH=1 sh # this command was before running it
-    fi
-    # UV_INSTALLER_ENV_COMMAND="${HOME}/.local/bin/env"
-    # UV_APPEND_COMMAND=". \"${UV_INSTALLER_ENV_COMMAND}\""
-    # if [[ "$ZSH_INSTALLED" == "true" ]] && [[ -f "$UV_INSTALLER_ENV_COMMAND" ]] && ! grep -q "${UV_APPEND_COMMAND}" "${HOME}/.zshrc"; then
-    #     echo  $UV_APPEND_COMMAND>> "${HOME}/.zshrc"
-    log_success "uv installed/verified."
+if ask_yes_no "Do you want to install/update uv (Fast Python manager)?"; then
+    log_info "Installing/updating uv..."
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+    log_success "uv installation/update complete."
 fi
 
 # --- fnm (Node Manager) ---
-if ask_yes_no "Do you want to install fnm (Fast Node manager)?"; then
-    if ! command -v fnm &> /dev/null; then
-        curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
-    fi
+if ask_yes_no "Do you want to install/update fnm (Fast Node manager)?"; then
+    log_info "Installing/updating fnm..."
+    curl -fsSL https://fnm.vercel.app/install | bash -s -- --skip-shell
     
     FNM_CONFIG='export PATH="$HOME/.local/share/fnm:$PATH"
 eval "$(fnm env --use-on-cd)"'
@@ -214,7 +204,7 @@ eval "$(fnm env --use-on-cd)"'
     if [[ -f "$HOME/.zshrc" ]]; then
         update_shell_config "$HOME/.zshrc" "$FNM_CONFIG"
     fi
-    log_success "fnm installed/verified."
+    log_success "fnm installation/update complete."
 fi
 
 # --- Optional Tools ---
@@ -222,12 +212,34 @@ if ask_yes_no "Do you want to install Neovim?"; then
     install_packages neovim
 fi
 
-if ask_yes_no "Do you want to install Docker and Docker-compose?"; then
-    install_packages docker docker-compose
+if ask_yes_no "Do you want to install Docker and Docker Compose (v2)?"; then
+    if [[ "$PKG_MANAGER" == "apt" || "$PKG_MANAGER" == "dnf" ]]; then
+        install_packages docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    else
+        # Arch usually bundles v2 in docker-compose or just 'docker'
+        install_packages docker docker-compose
+    fi
+
     if ! groups "$USER" | grep -q '\bdocker\b'; then
         sudo usermod -aG docker "$USER"
         log_warn "Added $USER to docker group. You need to logout/login."
     fi
+    
+    # Start docker if not running
+    sudo systemctl enable --now docker || true
 fi
+
+# --- Final Summary ---
+echo -e "\n${BLUE}--- Version Summary ---${NC}"
+command -v git &>/dev/null && echo "Git: $(git --version)" || true
+command -v uv &>/dev/null && echo "uv: $(uv --version)" || true
+command -v fnm &>/dev/null && echo "fnm: $(fnm --version)" || true
+command -v docker &>/dev/null && echo "Docker: $(docker --version)" || true
+if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+    echo "Docker Compose: $(docker compose version)"
+elif command -v docker-compose &>/dev/null; then
+    echo "Docker Compose: $(docker-compose --version)"
+fi
+command -v nvim &>/dev/null && echo "Neovim: $(nvim --version | head -n 1)" || true
 
 log_success "All specified setup tasks completed successfully!"
