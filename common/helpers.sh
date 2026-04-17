@@ -118,6 +118,93 @@ is_ohMyZsh_installed() {
     [[ -d "${HOME}/.oh-my-zsh" ]]
 }
 
+# --- File Management ---
+append_to_file_if_not_exists() {
+    local file="$1"
+    local line="$2"
+    local sudo_prefix="${3:-}"
+
+    if [[ -f "$file" ]] && grep -qF "$line" "$file"; then
+        log_info "Line already exists in $file: $line"
+    else
+        log_info "Adding to $file: $line"
+        if [[ -n "$sudo_prefix" ]]; then
+            echo "$line" | sudo tee -a "$file" > /dev/null
+        else
+            echo "$line" >> "$file"
+        fi
+    fi
+}
+
+# --- WSL Specific ---
+is_wsl() {
+    grep -qi microsoft /proc/version
+}
+
+# --- Docker Rootless ---
+setup_docker_rootless() {
+    log_info "Setting up Docker Rootless..."
+    
+    # 1. Install dependencies
+    install_packages newuidmap newgidmap
+    
+    # 2. Configure subuid/subgid if not set
+    if ! grep -q "$USER" /etc/subuid; then
+        echo "$USER:100000:65536" | sudo tee -a /etc/subuid
+    fi
+    if ! grep -q "$USER" /etc/subgid; then
+        echo "$USER:100000:65536" | sudo tee -a /etc/subgid
+    fi
+
+    # 3. Disable iptables/bridge for WSL if needed
+    if is_wsl; then
+        local docker_config_dir="$HOME/.config/docker"
+        mkdir -p "$docker_config_dir"
+        cat > "$docker_config_dir/daemon.json" <<EOF
+{
+  "iptables": false,
+  "ip6tables": false,
+  "bridge": "none"
+}
+EOF
+    fi
+
+    # 4. Enable linger and user service
+    loginctl enable-linger "$USER"
+    
+    # 5. Run the rootless install script if docker-rootless-extras is not providing it
+    if ! command_exists dockerd-rootless-setuptool.sh; then
+        if [[ "$PKG_MANAGER" == "pacman" ]]; then
+            install_packages docker-rootless-extras
+        fi
+    fi
+    
+    if command_exists dockerd-rootless-setuptool.sh; then
+        dockerd-rootless-setuptool.sh install
+        systemctl --user enable --now docker
+        log_success "Docker Rootless service enabled."
+    else
+        log_warn "dockerd-rootless-setuptool.sh not found. Manual intervention might be needed."
+    fi
+}
+
+# --- SSH Config ---
+setup_ssh_identities() {
+    local identity_name="$1"
+    local key_file="$HOME/.ssh/id_ed25519_$identity_name"
+    
+    if [[ "$identity_name" == "personal" ]]; then
+        key_file="$HOME/.ssh/id_ed25519"
+    fi
+
+    if [[ ! -f "$key_file" ]]; then
+        log_info "Generating Ed25519 key for $identity_name..."
+        ssh-keygen -t ed25519 -f "$key_file" -C "$USER_EMAIL"
+    else
+        log_info "SSH key for $identity_name already exists."
+    fi
+}
+
 # --- Node/Tools Management ---
 fnm_set_default_fnm_node() {
     fnm default "${1}"

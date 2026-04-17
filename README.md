@@ -83,6 +83,24 @@ To run it:
 ./general/IA_settings.sh
 ```
 
+### `general/wsl_arch_setup.sh`
+
+This script provides advanced configuration specifically tailored for Arch Linux on WSL2. It focuses on a "Protected/Rootless" architecture, professional identity management, and high-performance developer toolchain.
+
+**Features:**
+- **WSL2 Systemd Integration**: Configures `/etc/wsl.conf` to enable systemd and sets the default user.
+- **Locale Fixes**: Resolves common Perl and locale warnings in WSL.
+- **Multi-Account SSH**: Generates and configures separate SSH keys for personal and work Git identities.
+- **Docker Rootless**: Sets up Docker to run without root privileges, specifically tuned for WSL2 network compatibility.
+- **Security Hardening**: Globally disables automatic script execution for `npm` and `pnpm`.
+- **Advanced Zsh Integration**: Automates `fnm`, `Docker Rootless`, and `Starship` prompt initialization.
+
+To run it:
+```bash
+chmod +x general/wsl_arch_setup.sh
+./general/wsl_arch_setup.sh
+```
+
 ## Customization
 
 You can easily customize this script by editing the `install_packages` function calls or by adding/removing the conditional blocks for different tools.
